@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STORMWATCH // AIRSPACE MONITOR</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #00ff88;
+    --green-dim: #00ff8844;
+    --green-dark: #00cc66;
+    --red: #ff3355;
+    --amber: #ffaa00;
+    --bg: #030a06;
+    --panel: #050f08;
+    --border: #0a2a14;
+    --text: #a0ffcc;
+    --text-dim: #3a7a55;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* SCANLINE OVERLAY */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,255,100,0.015) 2px,
+      rgba(0,255,100,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* HEADER */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--green);
+    border-radius: 50%;
+    position: relative;
+    animation: radar-spin 4s linear infinite;
+  }
+
+  .logo-icon::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 50%;
+    height: 2px;
+    background: linear-gradient(90deg, var(--green), transparent);
+    transform-origin: left center;
+    transform: translateY(-50%);
+    animation: radar-sweep 4s linear infinite;
+  }
+
+  @keyframes radar-sweep {
+    from { transform: translateY(-50%) rotate(0deg); }
+    to { transform: translateY(-50%) rotate(360deg); }
+  }
+
+  .logo-text {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 4px;
+    color: var(--green);
+  }
+
+  .logo-sub {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+  }
+
+  .header-stats {
+    display: flex;
+    gap: 24px;
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-val {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--green);
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+  }
+
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  .pulse-dot.red { background: var(--red); animation: pulse-red 1s ease-in-out infinite; }
+  .pulse-dot.amber { background: var(--amber); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--green); }
+    50% { opacity: 0.4; box-shadow: none; }
+  }
+  @keyframes pulse-red {
+    0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--red); }
+    50% { opacity: 0.3; box-shadow: none; }
+  }
+
+  /* MAIN LAYOUT */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* MAP */
+  #map {
+    flex: 1;
+    background: #030a06;
+    position: relative;
+  }
+
+  /* SIDE PANEL */
+  .panel {
+    width: 300px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .panel-section {
+    border-bottom: 1px solid var(--border);
+    padding: 12px;
+  }
+
+  .panel-title {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .panel-title span { color: var(--green); }
+
+  /* PIZZA INDEX */
+  .pizza-index {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    background: #0a1a0f;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    margin-bottom: 8px;
+  }
+
+  .pizza-icon { font-size: 20px; }
+
+  .pizza-label {
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .pizza-val {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .pizza-val.low { color: var(--green); }
+  .pizza-val.med { color: var(--amber); }
+  .pizza-val.high { color: var(--red); }
+
+  .meter {
+    height: 4px;
+    background: #0a2a14;
+    border-radius: 2px;
+    margin-top: 6px;
+    overflow: hidden;
+  }
+
+  .meter-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 1s ease;
+  }
+
+  .meter-fill.green { background: linear-gradient(90deg, var(--green-dark), var(--green)); }
+  .meter-fill.amber { background: linear-gradient(90deg, #cc7700, var(--amber)); }
+  .meter-fill.red { background: linear-gradient(90deg, #cc0022, var(--red)); }
+
+  /* FLIGHT LIST */
+  .flight-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+
+  .flight-list::-webkit-scrollbar { width: 4px; }
+  .flight-list::-webkit-scrollbar-track { background: transparent; }
+  .flight-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .flight-item {
+    padding: 8px;
+    border: 1px solid var(--border);
+    margin-bottom: 6px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #050f08;
+  }
+
+  .flight-item:hover, .flight-item.active {
+    border-color: var(--green);
+    background: #0a1a0f;
+  }
+
+  .flight-item.military {
+    border-color: var(--red);
+    background: #1a0508;
+  }
+
+  .flight-item.military:hover { border-color: #ff6680; }
+
+  .flight-callsign {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--green);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .flight-item.military .flight-callsign { color: var(--red); }
+
+  .flight-detail {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .tag {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    letter-spacing: 1px;
+  }
+
+  .tag.mil { background: rgba(255,51,85,0.2); color: var(--red); border: 1px solid var(--red); }
+  .tag.civil { background: rgba(0,255,136,0.1); color: var(--green-dark); border: 1px solid var(--border); }
+  .tag.unknown { background: rgba(255,170,0,0.1); color: var(--amber); border: 1px solid var(--amber); }
+
+  /* FOOTER */
+  footer {
+    padding: 6px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    color: var(--text-dim);
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+
+  #clock { color: var(--green); font-size: 12px; letter-spacing: 2px; }
+  #refresh-countdown { color: var(--amber); }
+
+  /* LOADING */
+  .loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(3,10,6,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .loading-text {
+    color: var(--green);
+    font-size: 13px;
+    letter-spacing: 3px;
+    animation: blink 1s step-end infinite;
+  }
+
+  @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+
+  .loading-spinner {
+    width: 60px;
+    height: 60px;
+    border: 2px solid var(--border);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 16px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* MAP CUSTOM STYLES */
+  .flight-icon {
+    font-size: 14px;
+    line-height: 1;
+    filter: drop-shadow(0 0 4px #00ff88);
+    transition: transform 0.5s ease;
+  }
+
+  .flight-icon.military { filter: drop-shadow(0 0 5px #ff3355); }
+
+  .leaflet-popup-content-wrapper {
+    background: var(--panel) !important;
+    border: 1px solid var(--green) !important;
+    border-radius: 2px !important;
+    box-shadow: 0 0 20px rgba(0,255,136,0.2) !important;
+    color: var(--text) !important;
+    font-family: 'Share Tech Mono', monospace !important;
+  }
+
+  .leaflet-popup-tip { background: var(--panel) !important; }
+  .leaflet-popup-close-button { color: var(--green) !important; }
+
+  .popup-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--green);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+  }
+
+  .popup-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin: 3px 0;
+  }
+
+  .popup-row span:last-child { color: var(--text); }
+
+  /* No data message */
+  .no-data {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  /* ALERT BANNER */
+  .alert-banner {
+    display: none;
+    background: rgba(255,51,85,0.15);
+    border-bottom: 1px solid var(--red);
+    padding: 6px 20px;
+    font-size: 11px;
+    color: var(--red);
+    letter-spacing: 2px;
+    text-align: center;
+    animation: blink 0.5s step-end infinite;
+    flex-shrink: 0;
+  }
+
+  .alert-banner.show { display: block; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon"></div>
+    <div>
+      <div class="logo-text">STORMWATCH</div>
+      <div class="logo-sub">IRAN / MIDDLE EAST REGION // OSINT FEED</div>
+    </div>
+  </div>
+
+  <div class="header-stats">
+    <div class="stat">
+      <div class="stat-val" id="total-flights">--</div>
+      <div class="stat-label">TRACKED</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="mil-count" style="color:var(--red)">--</div>
+      <div class="stat-label">FLAGGED</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="region-count">--</div>
+      <div class="stat-label">IN REGION</div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="pulse-dot" id="status-dot"></div>
+    <span id="status-text">CONNECTING...</span>
+  </div>
+</header>
+
+<div class="alert-banner" id="alert-banner">⚠ ELEVATED FLIGHT ACTIVITY DETECTED IN MONITORED REGION ⚠</div>
+
+<div class="main">
+  <div id="map">
+    <div class="loading-overlay" id="loading">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">ACQUIRING SIGNAL...</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <!-- PIZZA INDEX -->
+    <div class="panel-section">
+      <div class="panel-title">STORMWATCH INDEX <span id="pizza-time">--:--</span></div>
+
+      <div class="pizza-index">
+        <div class="pizza-icon">⛈</div>
+        <div style="flex:1">
+          <div class="pizza-label">ACTIVITY VS 7-DAY AVERAGE</div>
+          <div class="pizza-val" id="pizza-val">CALCULATING...</div>
+          <div class="meter">
+            <div class="meter-fill green" id="pizza-meter" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7-day comparison row -->
+      <div style="display:flex; justify-content:space-between; margin-top:8px;">
+        <div style="text-align:center; flex:1; border-right:1px solid var(--border); padding-right:8px">
+          <div style="font-family:'Rajdhani',sans-serif; font-size:20px; font-weight:700; color:var(--green)" id="today-count">--</div>
+          <div style="font-size:9px; color:var(--text-dim); letter-spacing:1px">TODAY</div>
+        </div>
+        <div style="text-align:center; flex:1; padding-left:8px">
+          <div style="font-family:'Rajdhani',sans-serif; font-size:20px; font-weight:700; color:var(--text-dim)" id="avg-count">--</div>
+          <div style="font-size:9px; color:var(--text-dim); letter-spacing:1px">7-DAY AVG</div>
+        </div>
+      </div>
+
+      <!-- Sparkline for past 7 days -->
+      <div style="margin-top:10px">
+        <div style="font-size:9px; color:var(--text-dim); letter-spacing:1px; margin-bottom:4px">7-DAY TREND</div>
+        <canvas id="sparkline" width="270" height="40" style="width:100%; height:40px"></canvas>
+      </div>
+
+      <div style="font-size:10px; color:var(--text-dim); line-height:1.5; margin-top:8px" id="pizza-explanation">
+        Comparing live flight count vs 7-day historical average for this region.
+      </div>
+    </div>
+
+    <!-- REGION FILTER -->
+    <div class="panel-section">
+      <div class="panel-title">MONITOR ZONE</div>
+      <select id="region-select" style="
+        background: #0a1a0f;
+        color: var(--green);
+        border: 1px solid var(--border);
+        padding: 6px 8px;
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 11px;
+        width: 100%;
+        cursor: pointer;
+        letter-spacing: 1px;
+      ">
+        <option value="iran">IRAN (24-40°N, 44-64°E)</option>
+        <option value="gulf">PERSIAN GULF (22-28°N, 48-60°E)</option>
+        <option value="mideast">WIDER MIDDLE EAST (20-42°N, 34-64°E)</option>
+      </select>
+    </div>
+
+    <!-- FLIGHT LIST -->
+    <div class="panel-title" style="padding:12px 12px 0; margin-bottom:0">
+      TRACKED FLIGHTS
+      <span id="list-count">0</span>
+    </div>
+    <div class="flight-list" id="flight-list">
+      <div class="no-data">AWAITING DATA...</div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div>SOURCE: OPENSKY NETWORK // ADS-B // OPEN DATA</div>
+  <div id="clock">--:--:-- UTC</div>
+  <div>REFRESH IN: <span id="refresh-countdown" style="color:var(--amber)">--</span>s</div>
+</footer>
+
+<script>
+// =============================================
+//  REGION DEFINITIONS
+// =============================================
+const REGIONS = {
+  iran:    { minLat:24, maxLat:40, minLon:44, maxLon:64, center:[32,54], zoom:6 },
+  gulf:    { minLat:22, maxLat:28, minLon:48, maxLon:60, center:[25,54], zoom:7 },
+  mideast: { minLat:20, maxLat:42, minLon:34, maxLon:64, center:[32,48], zoom:5 }
+};
+
+let currentRegion = 'iran';
+let flights = [];
+let markers = {};
+let selectedFlight = null;
+let countdown = 30;
+let countdownInterval;
+
+// =============================================
+//  MAP SETUP
+// =============================================
+const map = L.map('map', {
+  center: REGIONS[currentRegion].center,
+  zoom: REGIONS[currentRegion].zoom,
+  zoomControl: true,
+  attributionControl: true
+});
+
+// Dark military-style tile layer
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© CartoDB © OpenStreetMap',
+  maxZoom: 18
+}).addTo(map);
+
+// Draw region box
+let regionRect;
+function drawRegionBox(regionKey) {
+  const r = REGIONS[regionKey];
+  if (regionRect) map.removeLayer(regionRect);
+  regionRect = L.rectangle(
+    [[r.minLat, r.minLon], [r.maxLat, r.maxLon]],
+    { color: '#00ff88', weight: 1, opacity: 0.5, fillOpacity: 0.03, dashArray: '4' }
+  ).addTo(map);
+}
+drawRegionBox(currentRegion);
+
+// =============================================
+//  FLIGHT ICON CREATION
+// =============================================
+function getFlightIcon(heading, isMilitary) {
+  const rotation = heading || 0;
+  const color = isMilitary ? '#ff3355' : '#00ff88';
+  const glow = isMilitary ? '#ff3355' : '#00ff88';
+  return L.divIcon({
+    html: `<div style="
+      transform: rotate(${rotation}deg);
+      font-size: 16px;
+      filter: drop-shadow(0 0 4px ${glow});
+      color: ${color};
+      line-height:1;
+    ">✈</div>`,
+    className: '',
+    iconSize: [20, 20],
+    iconAnchor: [10, 10]
+  });
+}
+
+// =============================================
+//  MILITARY/FLAGGED DETECTION
+// =============================================
+const MILITARY_PATTERNS = [
+  /^(CNV|USAF|RCH|CASA|JAKE|MAGMA|ROCKY|LOBO|REACH|SPAR|POLO|GLEX|BISON|FURY|GHOST|BLADE)/i,
+  /^[A-Z]{2}\d{4,}$/,  // generic pattern
+];
+
+const INTERESTING_CALLSIGNS = [
+  'USAF', 'RCH', 'SPAR', 'CNV', 'REACH', 'JAKE', 'POLO', 'ROCKY',
+  'MAGMA', 'GHOST', 'BLADE', 'FURY', 'RAGE', 'VIPER'
+];
+
+function isMilitary(callsign, icao) {
+  if (!callsign) return false;
+  const cs = callsign.trim().toUpperCase();
+  return INTERESTING_CALLSIGNS.some(k => cs.startsWith(k));
+}
+
+function classifyFlight(callsign, icao) {
+  if (isMilitary(callsign, icao)) return 'military';
+  if (!callsign || callsign.trim() === '') return 'unknown';
+  return 'civil';
+}
+
+// =============================================
+//  FETCH FROM OPENSKY
+// =============================================
+async function fetchFlights() {
+  const r = REGIONS[currentRegion];
+  const url = `https://opensky-network.org/api/states/all?lamin=${r.minLat}&lomin=${r.minLon}&lamax=${r.maxLat}&lomax=${r.maxLon}`;
+
+  try {
+    document.getElementById('status-dot').className = 'pulse-dot amber';
+    document.getElementById('status-text').textContent = 'FETCHING...';
+
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('status-dot').className = 'pulse-dot';
+    document.getElementById('status-text').textContent = 'LIVE FEED';
+
+    processFlights(data.states || []);
+  } catch(e) {
+    document.getElementById('status-dot').className = 'pulse-dot red';
+    document.getElementById('status-text').textContent = 'ERROR — RETRY';
+    document.getElementById('loading').style.display = 'none';
+    console.error('Fetch error:', e);
+
+    // Show error in panel
+    document.getElementById('flight-list').innerHTML =
+      `<div class="no-data">⚠ FEED INTERRUPTED<br><br>OpenSky may be rate-limiting.<br>Wait 30s for retry.</div>`;
+  }
+}
+
+// =============================================
+//  PROCESS & RENDER FLIGHTS
+// =============================================
+function processFlights(states) {
+  flights = states.map(s => ({
+    icao:     s[0],
+    callsign: (s[1] || '').trim(),
+    country:  s[2],
+    lat:      s[6],
+    lon:      s[5],
+    altitude: s[7],   // meters
+    speed:    s[9],   // m/s
+    heading:  s[10],
+    vertical: s[11],  // m/s
+    onGround: s[8],
+    type:     classifyFlight(s[1], s[0])
+  })).filter(f => f.lat && f.lon && !f.onGround);
+
+  updateMap();
+  updatePanel();
+  updateStats();
+  updatePizzaIndex();
+}
+
+function updateMap() {
+  const currentIcaos = new Set(flights.map(f => f.icao));
+
+  // Remove stale markers
+  Object.keys(markers).forEach(icao => {
+    if (!currentIcaos.has(icao)) {
+      map.removeLayer(markers[icao]);
+      delete markers[icao];
+    }
+  });
+
+  // Add/update markers
+  flights.forEach(f => {
+    const icon = getFlightIcon(f.heading, f.type === 'military');
+    const popup = `
+      <div class="popup-title">${f.callsign || f.icao} <span class="tag ${f.type}">${f.type.toUpperCase()}</span></div>
+      <div class="popup-row"><span>ICAO:</span><span>${f.icao.toUpperCase()}</span></div>
+      <div class="popup-row"><span>COUNTRY:</span><span>${f.country || 'UNKNOWN'}</span></div>
+      <div class="popup-row"><span>ALTITUDE:</span><span>${f.altitude ? Math.round(f.altitude)+'m / '+Math.round(f.altitude*3.281)+'ft' : '---'}</span></div>
+      <div class="popup-row"><span>SPEED:</span><span>${f.speed ? Math.round(f.speed*1.944)+' kts' : '---'}</span></div>
+      <div class="popup-row"><span>HEADING:</span><span>${f.heading ? Math.round(f.heading)+'°' : '---'}</span></div>
+      <div class="popup-row"><span>VERTICAL:</span><span>${f.vertical ? (f.vertical>0?'+':'')+Math.round(f.vertical*196.85)+' fpm' : '---'}</span></div>
+      <div class="popup-row"><span>POSITION:</span><span>${f.lat.toFixed(3)}°N ${f.lon.toFixed(3)}°E</span></div>
+    `;
+
+    if (markers[f.icao]) {
+      markers[f.icao].setLatLng([f.lat, f.lon]);
+      markers[f.icao].setIcon(icon);
+    } else {
+      markers[f.icao] = L.marker([f.lat, f.lon], { icon })
+        .addTo(map)
+        .bindPopup(popup, { maxWidth: 260 });
+    }
+  });
+}
+
+function updatePanel() {
+  const list = document.getElementById('flight-list');
+  document.getElementById('list-count').textContent = flights.length;
+
+  if (flights.length === 0) {
+    list.innerHTML = '<div class="no-data">NO FLIGHTS IN REGION<br><br>Airspace clear or data delayed.</div>';
+    return;
+  }
+
+  // Sort: military first, then by altitude desc
+  const sorted = [...flights].sort((a,b) => {
+    if (a.type === 'military' && b.type !== 'military') return -1;
+    if (b.type === 'military' && a.type !== 'military') return 1;
+    return (b.altitude||0) - (a.altitude||0);
+  });
+
+  list.innerHTML = sorted.map(f => `
+    <div class="flight-item ${f.type === 'military' ? 'military' : ''} ${selectedFlight === f.icao ? 'active' : ''}"
+         onclick="selectFlight('${f.icao}', ${f.lat}, ${f.lon})">
+      <div class="flight-callsign">
+        ${f.callsign || f.icao.toUpperCase()}
+        <span class="tag ${f.type}">${f.type === 'unknown' ? 'UNK' : f.type.toUpperCase().slice(0,3)}</span>
+      </div>
+      <div class="flight-detail">
+        <span>${f.altitude ? Math.round(f.altitude*3.281)+'ft' : '---'}</span>
+        <span>${f.speed ? Math.round(f.speed*1.944)+'kts' : '---'}</span>
+        <span>${f.country || '???'}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectFlight(icao, lat, lon) {
+  selectedFlight = icao;
+  map.setView([lat, lon], 8, { animate: true });
+  if (markers[icao]) markers[icao].openPopup();
+  updatePanel();
+}
+
+function updateStats() {
+  const milCount = flights.filter(f => f.type === 'military').length;
+  document.getElementById('total-flights').textContent = flights.length;
+  document.getElementById('mil-count').textContent = milCount;
+  document.getElementById('region-count').textContent = flights.length;
+
+  // Alert banner if many military
+  const banner = document.getElementById('alert-banner');
+  if (milCount >= 3) {
+    banner.classList.add('show');
+  } else {
+    banner.classList.remove('show');
+  }
+}
+
+// =============================================
+//  7-DAY HISTORICAL DATA (OpenSky)
+// =============================================
+let historicalCounts = []; // stores last 7 days' counts fetched from OpenSky
+
+async function fetchHistoricalCounts() {
+  const r = REGIONS[currentRegion];
+  const now = Math.floor(Date.now() / 1000);
+  const counts = [];
+
+  // Fetch one snapshot per day for past 7 days (same hour as now, each prior day)
+  // OpenSky free historical API: /api/states/all?time=<unix>
+  for (let daysAgo = 7; daysAgo >= 1; daysAgo--) {
+    const t = now - (daysAgo * 86400);
+    try {
+      const url = `https://opensky-network.org/api/states/all?time=${t}&lamin=${r.minLat}&lomin=${r.minLon}&lamax=${r.maxLat}&lomax=${r.maxLon}`;
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const data = await resp.json();
+        const count = (data.states || []).filter(s => !s[8]).length; // exclude on-ground
+        counts.push({ daysAgo, count });
+      } else {
+        counts.push({ daysAgo, count: null });
+      }
+    } catch(e) {
+      counts.push({ daysAgo, count: null });
+    }
+    // Small delay to avoid hammering API
+    await new Promise(res => setTimeout(res, 800));
+  }
+
+  historicalCounts = counts;
+  updatePizzaIndex();
+  drawSparkline();
+}
+
+function drawSparkline() {
+  const canvas = document.getElementById('sparkline');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const allCounts = historicalCounts.map(d => d.count).filter(c => c !== null);
+  if (allCounts.length === 0) return;
+
+  // Add today's count
+  const todayCount = flights.length;
+  const allValues = [...allCounts, todayCount];
+  const maxVal = Math.max(...allValues, 1);
+  const minVal = Math.min(...allValues);
+
+  const points = [...historicalCounts.map((d,i) => ({
+    x: (i / 7) * w,
+    y: h - ((( d.count || 0) - minVal) / (maxVal - minVal + 1)) * (h - 6) - 3,
+    count: d.count,
+    label: `${d.daysAgo}d ago`
+  })), {
+    x: w,
+    y: h - ((todayCount - minVal) / (maxVal - minVal + 1)) * (h - 6) - 3,
+    count: todayCount,
+    label: 'TODAY'
+  }];
+
+  // Draw grid lines
+  ctx.strokeStyle = '#0a2a14';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = (i / 4) * h;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  // Draw area fill
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, h);
+  points.forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.lineTo(points[points.length-1].x, h);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(0,255,136,0.08)';
+  ctx.fill();
+
+  // Draw line
+  ctx.beginPath();
+  ctx.strokeStyle = '#00cc66';
+  ctx.lineWidth = 1.5;
+  points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.stroke();
+
+  // Draw today's dot highlighted
+  const last = points[points.length - 1];
+  ctx.beginPath();
+  ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = todayCount > (allCounts.reduce((a,b)=>a+b,0)/allCounts.length) ? '#ff3355' : '#00ff88';
+  ctx.fill();
+
+  // Draw dots for history
+  points.slice(0, -1).forEach(p => {
+    if (p.count === null) return;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+    ctx.fillStyle = '#3a7a55';
+    ctx.fill();
+  });
+}
+
+function updatePizzaIndex() {
+  const today = flights.length;
+  document.getElementById('today-count').textContent = today;
+
+  const validHistory = historicalCounts.map(d => d.count).filter(c => c !== null);
+
+  const now = new Date();
+  document.getElementById('pizza-time').textContent =
+    now.getUTCHours().toString().padStart(2,'0') + ':' +
+    now.getUTCMinutes().toString().padStart(2,'0') + 'Z';
+
+  if (validHistory.length === 0) {
+    // Historical not loaded yet — show flight-only score while loading
+    document.getElementById('pizza-val').textContent = 'LOADING HISTORY...';
+    document.getElementById('avg-count').textContent = '--';
+    document.getElementById('pizza-meter').style.width = '0%';
+    document.getElementById('pizza-explanation').textContent = 'Fetching 7-day historical data from OpenSky...';
+    return;
+  }
+
+  const avg = Math.round(validHistory.reduce((a,b) => a+b, 0) / validHistory.length);
+  document.getElementById('avg-count').textContent = avg;
+
+  if (avg === 0) {
+    document.getElementById('pizza-val').textContent = 'NO BASELINE';
+    return;
+  }
+
+  const pctChange = Math.round(((today - avg) / avg) * 100);
+  const absPct = Math.abs(pctChange);
+
+  let label, cls, meterCls, meterWidth, explanation;
+
+  if (pctChange <= -20) {
+    label = `▼ ${absPct}% BELOW AVG`;
+    cls = 'low';
+    meterCls = 'green';
+    meterWidth = Math.max(5, 50 - absPct);
+    explanation = `Fewer flights than usual. Airspace may be restricted or quiet.`;
+  } else if (pctChange < 20) {
+    label = `≈ NORMAL (${pctChange > 0 ? '+' : ''}${pctChange}%)`;
+    cls = 'low';
+    meterCls = 'green';
+    meterWidth = 50;
+    explanation = `Flight activity is within normal range for this region and time.`;
+  } else if (pctChange < 50) {
+    label = `▲ +${pctChange}% ELEVATED`;
+    cls = 'med';
+    meterCls = 'amber';
+    meterWidth = Math.min(80, 50 + pctChange);
+    explanation = `Noticeably more flights than the 7-day average. Monitor closely.`;
+  } else {
+    label = `⚠ +${pctChange}% ANOMALY`;
+    cls = 'high';
+    meterCls = 'red';
+    meterWidth = 100;
+    explanation = `Significant spike above 7-day average. Possible elevated activity.`;
+  }
+
+  const valEl = document.getElementById('pizza-val');
+  const meterEl = document.getElementById('pizza-meter');
+  valEl.textContent = label;
+  valEl.className = `pizza-val ${cls}`;
+  meterEl.className = `meter-fill ${meterCls}`;
+  meterEl.style.width = `${meterWidth}%`;
+  document.getElementById('pizza-explanation').textContent = explanation;
+
+  drawSparkline();
+}
+
+// =============================================
+//  CLOCK & COUNTDOWN
+// =============================================
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.getUTCHours().toString().padStart(2,'0') + ':' +
+    now.getUTCMinutes().toString().padStart(2,'0') + ':' +
+    now.getUTCSeconds().toString().padStart(2,'0') + ' UTC';
+}
+
+function startCountdown() {
+  clearInterval(countdownInterval);
+  countdown = 30;
+  document.getElementById('refresh-countdown').textContent = countdown;
+  countdownInterval = setInterval(() => {
+    countdown--;
+    document.getElementById('refresh-countdown').textContent = countdown;
+    if (countdown <= 0) {
+      fetchFlights();
+      countdown = 30;
+    }
+  }, 1000);
+}
+
+// =============================================
+//  REGION SELECTOR
+// =============================================
+document.getElementById('region-select').addEventListener('change', function() {
+  currentRegion = this.value;
+  const r = REGIONS[currentRegion];
+  map.setView(r.center, r.zoom, { animate: true });
+  drawRegionBox(currentRegion);
+
+  // Clear markers
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+
+  document.getElementById('loading').style.display = 'flex';
+  fetchFlights();
+});
+
+// =============================================
+//  INIT
+// =============================================
+setInterval(updateClock, 1000);
+updateClock();
+fetchFlights();
+startCountdown();
+
+// Fetch historical data once on load (takes ~10s due to 7 API calls)
+// Refresh every 6 hours
+fetchHistoricalCounts();
+setInterval(fetchHistoricalCounts, 6 * 60 * 60 * 1000);
+
+// Refetch live flights every 30s
+setInterval(fetchFlights, 30000);
+</script>
+</body>
+</html>
